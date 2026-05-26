@@ -1,0 +1,47 @@
+# Environment variables (contains API keys)
+.env
+*.env.local
+
+# Generated Excel exports
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Test cache
+.pytest_cache/
+.coverage
+htmlcov/
+*.xml
+
+# Claude Code local session data
+.claude/
+
+# Docker volumes (if bind-mounted locally)
+pg_data/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

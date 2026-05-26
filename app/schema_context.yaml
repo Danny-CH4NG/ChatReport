@@ -1,0 +1,101 @@
+version: "1.0.0"
+
+database:
+  description: "台北市交通管理系統資料庫（PoC 版）"
+  domain_vocabulary:
+    路口: "查 intersections 資料表"
+    VD / 車輛偵測器: "查 devices WHERE device_type='VD'，量測資料在 vd_readings"
+    CMS / 可變資訊標誌: "查 devices WHERE device_type='CMS'，訊息記錄在 cms_messages"
+    TC / 交通控制器 / 號誌: "查 devices WHERE device_type='TC'，相位紀錄在 tc_phase_logs"
+    CCTV / 攝影機: "查 devices WHERE device_type='CCTV'，事件在 cctv_events"
+    eTag / 電子標籤: "查 devices WHERE device_type='eTag'，讀取紀錄在 etag_readings"
+    事件 / 事故: "查 incidents 資料表"
+    維護 / 保養: "查 maintenance_records 資料表"
+    尖峰時段: "工作日 07:00-09:00 及 17:00-19:00"
+    離峰時段: "工作日 10:00-16:00 及 19:00-23:00"
+    壅塞: "vd_readings.congestion_level IN ('heavy', 'jam')"
+    故障設備: "devices.status IN ('fault', 'offline')"
+    過飽和: "tc_phase_logs.is_oversaturated = true"
+
+tables:
+  intersections:
+    alias: "路口基本資料"
+    description: "所有路口的位置、行政區、道路等級資訊"
+
+  devices:
+    alias: "設備基底表"
+    description: "所有設備共用的基礎資訊。查詢特定類型設備時搭配 WHERE device_type=... 過濾，再 JOIN 對應的 _detail 子表取規格欄位"
+    join_pattern: "devices JOIN {type}_detail USING (device_id)"
+
+  vd_detail:
+    alias: "VD 設備規格"
+    description: "車輛偵測器規格，含偵測方式、車道數、進口方向"
+
+  vd_readings:
+    alias: "VD 車流量紀錄"
+    description: "每 5 分鐘一筆，含車道、車速、佔有率、車種分類"
+    query_tips:
+      - "跨路口統計：JOIN devices → intersections"
+      - "車種分類查詢：car_count / truck_count / motorcycle_count 欄位"
+      - "壅塞判斷用 congestion_level 欄位，或用 occupancy_pct > 80 自定義"
+
+  cms_detail:
+    alias: "CMS 設備規格"
+    description: "可變資訊標誌規格，含顯示類型、行列數、安裝方式"
+
+  cms_messages:
+    alias: "CMS 訊息紀錄"
+    description: "記錄每次顯示內容及起訖時間。removed_at IS NULL 代表目前仍在顯示"
+    common_patterns:
+      - "目前顯示中：WHERE removed_at IS NULL"
+      - "與 incidents 比對：用 displayed_at 與 incidents.occurred_at 做時間 JOIN"
+
+  tc_detail:
+    alias: "TC 設備規格"
+    description: "交通控制器規格，含控制類型、相位數、幹線協調群組"
+
+  tc_phase_logs:
+    alias: "TC 相位紀錄"
+    description: "每次相位切換的綠燈/紅燈秒數記錄"
+    common_patterns:
+      - "過飽和：WHERE is_oversaturated = true"
+      - "平均週期長度：AVG(cycle_length_sec) GROUP BY device_id, DATE_TRUNC('hour', recorded_at)"
+
+  cctv_detail:
+    alias: "CCTV 設備規格"
+    description: "閉路電視規格，含解析度、是否有 AI 分析功能"
+
+  cctv_events:
+    alias: "CCTV 偵測事件"
+    description: "AI 或人工偵測的交通事件，is_confirmed=true 表示人工核認"
+
+  etag_detail:
+    alias: "eTag 設備規格"
+    description: "電子標籤讀取器規格，含天線數量、讀取距離"
+
+  etag_readings:
+    alias: "eTag 旅行時間"
+    description: "旅行時間計算需與 origin_device_id 對應的路口比較"
+
+  incidents:
+    alias: "交通事件"
+    description: "跨設備來源的交通事件彙整，severity=critical 為最高等級"
+    common_patterns:
+      - "未解除事件：WHERE resolved_at IS NULL"
+      - "平均處理時間：EXTRACT(EPOCH FROM (resolved_at - occurred_at))/60 AS minutes"
+
+  maintenance_records:
+    alias: "設備維護記錄"
+    description: "設備的維護、修繕、韌體更新紀錄，含費用與停機時間"
+
+query_examples:
+  - nl: "目前哪些 CMS 還在顯示警告訊息？"
+    sql_hint: "SELECT d.device_code, i.name AS intersection, m.message_content, m.displayed_at FROM cms_messages m JOIN devices d USING (device_id) JOIN intersections i USING (intersection_id) WHERE m.removed_at IS NULL AND m.message_type = 'warning'"
+  - nl: "今天哪個路口的 VD 壅塞最嚴重？"
+    sql_hint: "SELECT i.name, COUNT(*) AS jam_count FROM vd_readings r JOIN devices d USING (device_id) JOIN intersections i USING (intersection_id) WHERE DATE(r.recorded_at) = CURRENT_DATE AND r.congestion_level = 'jam' GROUP BY i.name ORDER BY jam_count DESC"
+  - nl: "哪些 TC 今天發生過飽和？"
+    sql_hint: "SELECT DISTINCT d.device_code, i.name FROM tc_phase_logs l JOIN devices d USING (device_id) JOIN intersections i USING (intersection_id) WHERE l.is_oversaturated = true AND DATE(l.recorded_at) = CURRENT_DATE"
+  - nl: "本月維護費用最高的設備是哪種類型？"
+    sql_hint: "SELECT d.device_type, SUM(m.cost_ntd) AS total_cost FROM maintenance_records m JOIN devices d USING (device_id) WHERE DATE_TRUNC('month', m.work_date) = DATE_TRUNC('month', CURRENT_DATE) GROUP BY d.device_type ORDER BY total_cost DESC"
+  - nl: "目前哪些設備在故障？"
+    sql_hint: "SELECT d.device_code, d.device_type, d.status, i.name AS intersection FROM devices d JOIN intersections i USING (intersection_id) WHERE d.status IN ('fault', 'offline') ORDER BY d.device_type"
