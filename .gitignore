@@ -1,3 +1,6 @@
+# PRD document
+PRD_*.md
+
 # Environment variables (contains API keys)
 .env
 *.env.local
