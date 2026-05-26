@@ -1,5 +1,7 @@
 # ChatReport — Chat-to-SQL for Traffic Management
 
+![示意圖](./demo.png)
+
 A proof-of-concept that lets operators ask natural-language questions about traffic data and get instant answers, with one-click Excel export.
 
 ```
