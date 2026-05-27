@@ -1,12 +1,14 @@
 version: "3.9"
 
 services:
+  # PostgreSQL — only starts when explicitly requested via --profile postgres
   postgres:
+    profiles: ["postgres"]
     image: postgres:16-alpine
     container_name: traffic_postgres
     environment:
-      POSTGRES_DB: traffic_db
-      POSTGRES_USER: traffic_user
+      POSTGRES_DB: ${DB_NAME:-traffic_db}
+      POSTGRES_USER: ${DB_USER:-traffic_user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
     volumes:
       - pg_data:/var/lib/postgresql/data
@@ -14,7 +16,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U traffic_user -d traffic_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-traffic_user} -d ${DB_NAME:-traffic_db}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -26,20 +28,21 @@ services:
       dockerfile: Dockerfile
     container_name: traffic_mcp
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: traffic_db
-      DB_USER: traffic_user
+      DB_TYPE: ${DB_TYPE:-postgres}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-traffic_db}
+      DB_USER: ${DB_USER:-traffic_user}
       DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      DB_SCHEMA: ${DB_SCHEMA:-public}
+      DB_CONNECTION_TIMEOUT: ${DB_CONNECTION_TIMEOUT:-15}
+      DB_SSL_MODE: ${DB_SSL_MODE:-disable}
       MCP_PORT: 8080
       SCHEMA_CONTEXT_PATH: /app/schema_context.yaml
       AUDIT_LOG_DIR: /app/logs
     volumes:
       - ./app/schema_context.yaml:/app/schema_context.yaml:ro
       - mcp_logs:/app/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
     ports:
       - "8080:8080"
     restart: unless-stopped

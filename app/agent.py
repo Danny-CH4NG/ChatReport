@@ -18,6 +18,7 @@ import anthropic
 import yaml
 from mcp import ClientSession
 from mcp.client.sse import sse_client
+from skills.nl_to_sql import build_dialect_section, get_db_dialect
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ def build_system_prompt(schema_cache: dict) -> str:
             join_pat = tinfo.get("join_pattern", "")
             tips     = tinfo.get("query_tips") or tinfo.get("common_patterns") or []
             cols     = ", ".join(
-                f"{c['column_name']}({c['data_type']})"
+                f"{c['name']}({c['type']})"
                 for c in tinfo.get("columns", [])
             )
             header = f"  - **{tname}**" + (f"（{alias}）" if alias else "")
@@ -88,6 +89,10 @@ def build_system_prompt(schema_cache: dict) -> str:
             body.append(f"    欄位：{cols}")
             parts.append(header + "\n" + "\n".join(body))
         schema_section = "\n## 資料表清單\n" + "\n".join(parts)
+
+    dialect = get_db_dialect(schema_cache)
+    dialect_label = "Vertica" if dialect == "vertica" else "PostgreSQL"
+    dialect_section = build_dialect_section(schema_cache)
 
     return f"""你是台北市交通管理系統的資料分析助理，使用繁體中文回應。
 {schema_section}{vocab_section}
@@ -107,9 +112,9 @@ def build_system_prompt(schema_cache: dict) -> str:
 
 ## 查詢規則
 - 只能 SELECT，不能修改資料
-- 使用 PostgreSQL 語法
+- 使用 {dialect_label} 語法
 - 查詢特定設備類型：從 devices WHERE device_type='...' 開始再 JOIN 子表
-
+{dialect_section}
 ## 回覆格式
 1. 說明此次查詢的邏輯與範圍
 2. Markdown 表格呈現重點數據（最多 20 列，超過說明總筆數）
